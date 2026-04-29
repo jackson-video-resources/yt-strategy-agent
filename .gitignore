@@ -1,0 +1,9 @@
+.env
+client_secret.json
+token.pickle
+.venv/
+__pycache__/
+*.pyc
+state.db
+channels/
+.DS_Store
