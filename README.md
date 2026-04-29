@@ -9,7 +9,7 @@ For every channel you watch, you get:
 - **trades.md** — executed trades the host called out
 - **videos/<id>.md** — per-video extracted notes + transcript
 
-Plus alerts to your **email**, **Telegram**, or **Slack** (your choice — pick one or all three) whenever:
+Plus an **email alert** to your inbox (sent from your own Gmail) whenever:
 - a new video drops
 - the deduced strategy shifts
 - a new trade is called out
@@ -32,7 +32,8 @@ This repo is designed to be set up by an AI agent walking you through it.
 - **Hostinger KVM 2 VPS:** ~£6/month — [get your account here](https://www.hostinger.com/uk?REFERRALCODE=EGBLEWISRZT6)
 - **Anthropic API:** ~£0.10–£0.50/month for typical use
 - **YouTube Data API:** free
-- **Apify** (optional, only if YouTube blocks transcript pulls from the VPS): a few pence/month — [sign up here](https://apify.com?fpr=3ly3yd)
+- **Apify** (transcript fetcher): a few pence/month — [sign up here](https://apify.com?fpr=3ly3yd)
+- **Email alerts:** free — sent from your own Gmail
 
 ## How it works under the hood
 
@@ -77,9 +78,9 @@ extract.py           Claude prompt + JSON schema
 weighting.py         Recency weighting + similarity grouping
 change_detect.py     Strategy-shift detection
 store.py             SQLite + markdown IO
-alerts.py            Email / Telegram / Slack dispatch
+notify.py            Email sender (Gmail SMTP)
+transcript.py        Apify transcript fetcher
 channels.yaml        Channels to watch (you edit this)
-alerts.yaml          Which alert channels + which events fire
 scripts/
   bootstrap_vps.sh   One-shot SSH + install onto Hostinger
   watcher.service    systemd unit

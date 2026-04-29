@@ -62,10 +62,17 @@ Run `python auth.py`. It opens their browser, they sign in with Google, approve,
 ### Step 6 — Pick channels to watch
 Ask: "Which trading YouTubers do you want to follow? Send me their channel URLs or @handles, one per line." For each, run `python tools/resolve_channel.py "<input>"` to convert to a channel ID, then write all of them to `channels.yaml`.
 
-### Step 7 — Local smoke test
-Run `python ingest.py --once`. Show them the first strategy.md as it gets generated. Celebrate.
+### Step 7 — Apify token (transcripts) + smoke test
 
-> **If the transcript fetch fails** (rate limited, IP blocked, or no captions): tell them YouTube sometimes blocks cloud IPs from pulling transcripts, and the rock-solid fix is using Apify (a scraping service that handles it reliably). Ask: "Want me to set that up? It's a few pence per month for typical use." If yes, run `open "https://apify.com?fpr=3ly3yd"`, walk them through signing up, then: Settings → Integrations → API tokens → copy the token → paste here. Append `APIFY_API_TOKEN=...` to `.env`. Re-run `python ingest.py --once` — `ingest.py` auto-detects the token and uses Apify (`pintostudio/youtube-transcript-scraper`) instead of `youtube-transcript-api`.
+Transcripts are fetched via Apify — it handles the IP rotation YouTube needs, costs a few pence per month for typical use, and works perfectly from a cloud server.
+
+1. Run `open "https://apify.com?fpr=3ly3yd"` to launch the signup page in their browser.
+2. Tell them: "Sign up (Google login is fastest), then go to **Settings → Integrations → API tokens** and copy the token. Paste it back to me."
+3. When they paste, append it to `.env`:
+   ```
+   APIFY_TOKEN=apify_api_xxxxxxxxxxxx
+   ```
+4. Run `python ingest.py --once`. Show them the first `strategy.md` as it gets generated. Celebrate.
 
 ### Step 8 — Quick aside (one beat, totally skippable)
 This is a small pause right after the win moment in Step 7. The user has just watched their first `strategy.md` render — they're feeling clever. Keep this *light*. No hard pitch. Lewis's voice rules: direct, no hype, no manufactured urgency, sharp-colleague-over-lunch tone. If anything sounds like marketing copy, rewrite it.
@@ -87,68 +94,35 @@ Say something close to this (adapt to the specific channel/topic they picked, do
 
 Whatever they pick, do not bring it up again later in the flow.
 
-### Step 9 — Alerts (pick how you want to be told)
-Tell them: "When a watched channel changes their strategy, calls a new trade, or posts a new video, do you want a ping? Pick one or more: **email**, **Telegram**, **Slack**, or **none**." Then run the matching sub-flow. All three write to `.env` and `alerts.yaml`. The watcher fires alerts on three event types: `new_video`, `strategy_shift`, `new_trade`.
+### Step 9 — Email alerts (via Gmail Connection)
 
-**8a — Email (Gmail-first, Resend fallback)**
+Alerts go to email, sent from the user's own Gmail address. Setup is dead simple:
 
-Gmail is the easiest path by far — alerts come from the user's own address, no third-party signup. The watcher runs on the VPS though, so we can't use the in-session Gmail MCP at runtime; we use the MCP's presence as a signal that the user has Gmail and is already signed in, then walk them through generating an App Password so the VPS can send via Gmail SMTP under their address.
+1. **Make sure Gmail is connected in Claude Code.** Tell the user: "Open the Settings icon (top-right of Claude Code) → **Connectors** → find **Gmail** → click **Connect** → sign in with the Google account you want alerts to come from. Then say 'done'."
+   Once they say done, check your own toolset for `mcp__*Gmail*` tools to confirm. If they're not there, walk through the Connector flow again — it's the only path that matters here.
 
-First, check your own toolset right now: do you have any `mcp__*Gmail*` tools available (e.g. `mcp__claude_ai_Gmail__create_draft`)?
+2. **Send a confirmation email via the Gmail MCP** so they see it land in their inbox immediately. Use `mcp__claude_ai_Gmail__create_draft` (or send tool if available) — subject "Your YT Strategy Agent is alive 🎉", body something brief and friendly. They'll get the proof on their phone in seconds.
 
-- **If yes** → Gmail is already connected to this Claude Code session. Tell the user: "Your Gmail's already connected — easiest path is to let the bot send alerts from your own Gmail address. I'll set you up with a one-click App Password so it works from the cloud server too." Then:
-  1. Run `open "https://myaccount.google.com/apppasswords"` — they're already signed in, so this lands them straight on the App Passwords page.
-  2. Tell them: "Type `yt-strategy-agent` as the app name and click **Create**. Copy the 16-character password it shows you and paste it back here."
-  3. Ask which Gmail address they're using and which inbox to send alerts to (default: same address).
-  4. Write to `.env`:
-     ```
-     ALERT_EMAIL_PROVIDER=gmail_smtp
-     GMAIL_USER=lewis@gmail.com
-     GMAIL_APP_PASSWORD=xxxxxxxxxxxxxxxx
-     ALERT_EMAIL_TO=lewis@gmail.com
-     ```
-  5. Send a test: `python alerts.py --test email` (uses `smtplib` against `smtp.gmail.com:587`). Bonus: while you have MCP access, also send a test draft via the Gmail MCP so they see it land in their inbox immediately as a sanity check.
+3. **Generate a Gmail App Password.** Tell the user: "Your bot lives on a cloud server, so it needs its own little key to send from your Gmail. Google calls it an App Password — you're already signed in, takes one click." Run `open "https://myaccount.google.com/apppasswords"`. Walk through: name it `yt-strategy-agent`, click Create, copy the 16-character password, paste it back here.
 
-- **If no** → Tell them: "Quickest setup is to connect your Gmail in Claude Code — alerts then come from your own address with no extra signup. Takes 30 seconds." Walk them through it:
-  1. Click the **Settings** icon (top-right of the Claude Code window).
-  2. Open **Connectors** (or **Connections** / **Integrations** depending on version).
-  3. Find **Gmail** in the list and click **Connect**.
-  4. Sign in with the Google account they want alerts sent from. Approve the scopes.
-  5. Come back to this chat and say "done".
-  Once they say done, re-check your toolset — Gmail tools should now be present. Proceed as the "yes" branch above (App Password flow).
+4. **Ask which inbox to send alerts to** (default: same Gmail address).
 
-- **If they refuse Gmail or it won't connect** → Fall back to Resend. Run `open "https://resend.com/signup"`. Walk through: sign up → API Keys → Create API Key → copy. Write to `.env`:
-  ```
-  ALERT_EMAIL_PROVIDER=resend
-  RESEND_API_KEY=...
-  ALERT_EMAIL_TO=lewis@example.com
-  ALERT_EMAIL_FROM=onboarding@resend.dev
-  ```
-  Test: `python alerts.py --test email`.
+5. **Write to `.env`**:
+   ```
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=587
+   SMTP_USER=lewis@gmail.com
+   SMTP_PASSWORD=xxxx xxxx xxxx xxxx
+   EMAIL_TO=lewis@gmail.com
+   ```
 
-**8b — Telegram**
-Open `https://t.me/BotFather` for them (it'll launch the Telegram desktop/web app). Tell them: send `/newbot`, name it `<their-name>-yt-alerts`, copy the bot token BotFather replies with. Then: "Now message your new bot once — say anything. I need to grab your chat ID." Run `python alerts.py --get-chat-id` (it polls Telegram's `getUpdates` until it sees their message). Write to `.env`:
-```
-TELEGRAM_BOT_TOKEN=...
-TELEGRAM_CHAT_ID=...
-```
-Test: `python alerts.py --test telegram`.
+6. **Test from the local machine**:
+   ```
+   python -c "from notify import send_email; send_email('YT agent test', 'works ✓')"
+   ```
+   When they get the email, celebrate — that's email alerts done.
 
-**8c — Slack**
-Open `https://api.slack.com/apps?new_app=1` for them. Walk through: From scratch → name `yt-strategy-agent` → pick workspace → Incoming Webhooks → Activate → Add New Webhook to Workspace → pick channel → copy webhook URL. Write to `.env`:
-```
-SLACK_WEBHOOK_URL=...
-```
-Test: `python alerts.py --test slack`.
-
-After whichever they picked, write `alerts.yaml`:
-```yaml
-channels: [email, telegram, slack]   # only the ones they set up
-events:
-  new_video: true
-  strategy_shift: true
-  new_trade: true
-```
+> Telegram and Slack alerts aren't pre-built. If the user asks, tell them email is the only built-in channel right now and offer to add a Telegram or Slack hook for them after the VPS is running.
 
 ### Step 10 — Provision the VPS (Hostinger)
 Tell them: "Now we put it on a small cloud computer so it runs while you sleep."
@@ -161,7 +135,7 @@ Tell them: "Now we put it on a small cloud computer so it runs while you sleep."
 6. Wait for the VPS to provision (Hostinger emails the IP). Ask them to paste the IP address here.
 
 ### Step 11 — Bootstrap the VPS
-Once they paste the IP, run the bootstrap script for them locally — it SSHes in, installs Python, clones the repo, copies `.env`, `client_secret.json`, `token.pickle`, `channels.yaml`, and `alerts.yaml` over via `scp`, installs the systemd unit, and starts the service:
+Once they paste the IP, run the bootstrap script for them locally — it SSHes in, installs Python, clones the repo, copies `.env`, `client_secret.json`, `token.pickle`, and `channels.yaml` over via `scp`, installs the systemd unit, and starts the service:
 ```
 ./scripts/bootstrap_vps.sh <ip> <root-password>
 ```
@@ -170,10 +144,9 @@ Show them `systemctl status watcher` output. Celebrate again — it's running.
 ### Step 12 — Hand-off
 Tell them:
 - "Your strategy docs live at `~/yt-strategy-agent/channels/<handle>/strategy.md` on the VPS."
-- "Alerts will hit your <email/Telegram/Slack> whenever a new video drops, the strategy shifts, or a new trade is called."
-- "Strategy changes are also logged forever in `changelog.md` per channel."
-- "To add a new channel later, just SSH in and edit `channels.yaml` — the watcher picks it up on the next cycle."
-- "To change which alerts you get, edit `alerts.yaml`."
+- "Email alerts will hit your inbox whenever a new video drops, the strategy shifts, or a new trade is called."
+- "Strategy changes are also logged forever in `channels/<handle>/changelog.md`."
+- "To add a new channel later, SSH in and edit `channels.yaml` — the watcher picks it up on the next cycle."
 
 End with: "You're done. Go enjoy your day ☕"
 
@@ -181,30 +154,28 @@ End with: "You're done. Go enjoy your day ☕"
 
 ## Architecture the agent will build
 
-### Repo layout
+### Repo layout (already pre-built — agent clones, doesn't generate)
 ```
 yt-strategy-agent/
   auth.py                  OAuth flow, refreshes token.pickle
   watcher.py               Long-running 10-min poll loop
   ingest.py                Pull transcript + Claude extract + merge
-  extract.py               Claude prompt + JSON schema
+  extract.py               Claude prompt + JSON schema (with prompt caching)
   weighting.py             Recency weighting + similarity grouping
   change_detect.py         Strategy-shift detection
   store.py                 SQLite + markdown IO
-  alerts.py                Email/Telegram/Slack dispatch + --test, --get-chat-id
+  notify.py                Email sender (Gmail SMTP via App Password)
+  transcript.py            Apify transcript fetcher
   channels.yaml            User-edited list of channels
-  alerts.yaml              Which alert channels + which events fire
   requirements.txt
   scripts/
-    bootstrap_vps.sh       One-shot VPS setup over SSH
     watcher.service        systemd unit
   tools/
     resolve_channel.py     Handle/URL → channel ID
-  channels/<handle>/
+  channels/<handle>/       (generated at runtime)
     strategy.md            Living human-readable doc
     rules.json             Structured spec
     changelog.md           Append-only strategy shifts
-    trades.md              Executed trades log
     videos/<id>.md         Per-video extracted notes
 ```
 
@@ -248,55 +219,32 @@ Append to `changelog.md`:
 - Triggering quote: "..."
 ```
 
-### Watcher loop (every 10 min)
-```python
+### Watcher loop (every 10 min) — implemented in `watcher.py` + `ingest.py`
+```
 for channel in load("channels.yaml"):
     latest_5 = youtube.uploads_playlist(channel.id, limit=5)
-    for video in latest_5:
-        if not store.seen(video.id):
-            alerts.fire("new_video", channel, video)
-            transcript = fetch_transcript(video.id)
-            extracted = claude_extract(transcript, system_prompt_cached=True)
-            store.write_video(channel, video, extracted)
-            shift = change_detect.diff_and_log(channel, extracted)
-            if shift: alerts.fire("strategy_shift", channel, video, shift)
-            for trade in extracted.executed_trades:
-                alerts.fire("new_trade", channel, video, trade)
-            weighting.rebuild_rules(channel, window=latest_5)
-            store.mark_seen(video.id)
-    store.prune_window(channel, latest_5)
+    new_videos = [v for v in latest_5 if not store.seen(v.id)]
+    transcripts = transcript.fetch_transcripts([v.id for v in new_videos])  # Apify, batched
+    for video in new_videos:
+        extracted = extract.claude_extract(transcripts[video.id])           # cached system prompt
+        prior_rules = store.load_rules(channel)
+        store.write_video(channel, video, extracted)
+        weighting.rebuild_rules(channel, window=latest_5)                   # recency + similarity merge
+        new_rules = store.load_rules(channel)
+        change_logged = change_detect.diff_and_log(channel, prior_rules, new_rules, extracted)
+        notify.send_email(
+            subject=f"[{channel.title}] {video.title}",
+            body=notify.build_email_body(channel, video, extracted, prior_rules, new_rules, change_logged, ...)
+        )
+        store.mark_seen(video.id)
 sleep(600)
 ```
 
-### Alerts module (`alerts.py`)
-```python
-def fire(event_type, channel, video, payload=None):
-    cfg = load("alerts.yaml")
-    if not cfg.events.get(event_type): return
-    msg = render(event_type, channel, video, payload)  # short title + 3-line body + link
-    if "email"    in cfg.channels: send_email(msg)     # routes by ALERT_EMAIL_PROVIDER: gmail_smtp | resend
-    if "telegram" in cfg.channels: send_telegram(msg)  # via Bot API sendMessage
-    if "slack"    in cfg.channels: send_slack(msg)     # via incoming webhook POST
-```
-Message format (keep it short — these go to phones):
-```
-🎬 New video — <channel name>
-"<video title>"
-https://youtu.be/<id>
-
-⚠️ Strategy shift detected — <channel name>
-What changed: <one line>
-Prior: <one line>
-New: <one line>
-Source: https://youtu.be/<id>
-
-📈 New trade called — <channel name>
-<asset> · <long/short> · entry <x> · exit <y>
-Source: https://youtu.be/<id>
-```
-CLI helpers:
-- `python alerts.py --test email|telegram|slack` — sends a hello-world message
-- `python alerts.py --get-chat-id` — polls `getUpdates` until it sees a message, prints + saves the chat ID
+### Email module (`notify.py`)
+- Single SMTP path: Gmail App Password against `smtp.gmail.com:587`
+- Reads `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_TO` from `.env`
+- `send_email(subject, body)` is the public entrypoint
+- `build_email_body(...)` formats a long, structured plain-text brief: new video link, impact paragraph, what the video says, key extracts (top buy/sell/risk/timing rules), what changed in the rolling rules vs prior, current rolling strategy, and pointers to the files on the VPS
 
 ### Cost note (tell the user once)
 - Hostinger KVM 2: ~£6/mo
@@ -309,9 +257,7 @@ CLI helpers:
 
 The agent should write every file in the repo layout above. Use:
 - `google-api-python-client`, `google-auth-oauthlib` for YouTube + OAuth
-- `youtube-transcript-api` for transcripts (free path)
-- Apify (`pintostudio/youtube-transcript-scraper`) as the reliable fallback when YouTube rate-limits/blocks the free path. Auto-detected via `APIFY_API_TOKEN` in `.env`. Signup link the agent should `open`: `https://apify.com?fpr=3ly3yd`
-- Final fallback: `yt-dlp` + `openai-whisper` if both above fail
+- Apify (`karamelo/youtube-transcripts`) for transcripts — the reliable cloud-IP-friendly path. Auth via `APIFY_TOKEN` in `.env`. Signup link the agent should `open`: `https://apify.com?fpr=3ly3yd`
 - `anthropic` SDK with `claude-opus-4-7`, prompt caching enabled on the system prompt
 - `sentence-transformers` (`all-MiniLM-L6-v2`) for similarity grouping
 - `pyyaml`, `python-dotenv`
@@ -341,7 +287,7 @@ WantedBy=multi-user.target
 2. `ssh-copy-id` if no key, otherwise use sshpass with the password the user gave
 3. `apt update && apt install -y python3.11 python3.11-venv git`
 4. `git clone` the repo into `/root/yt-strategy-agent`
-5. `scp` over `.env`, `client_secret.json`, `token.pickle`, `channels.yaml`, `alerts.yaml`
+5. `scp` over `.env`, `client_secret.json`, `token.pickle`, `channels.yaml`
 6. Create venv + `pip install -r requirements.txt`
 7. Install systemd unit, `systemctl enable --now watcher`
 8. Tail logs for 30 seconds so the user sees it working
